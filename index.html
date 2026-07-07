@@ -357,40 +357,62 @@
             } catch (error) {
                 console.warn("RapidAPI Failed (Likely CORS). Switching to Fallback API...", error);
                 
-                // ជម្រើសទី២: ប្រសិនបើ RapidAPI ប្លុក យើងប្រើប្រាស់ TheSportsDB ជំនួសវិញ
+                // ជម្រើសទី២: ប្រសិនបើ RapidAPI ប្លុក យើងប្រើប្រាស់ TheSportsDB ជំនួសវិញ (FIXED: Using .events)
                 try {
                     const fallbackUrl = 'https://www.thesportsdb.com/api/v1/json/3/eventslast.php?id=4328';
                     const fallbackResponse = await fetch(fallbackUrl);
+                    
+                    if (!fallbackResponse.ok) throw new Error("Fallback API connection failed.");
+                    
                     const fallbackData = await fallbackResponse.json();
 
-                    matchesData = fallbackData.results.slice(0, 5).map((match, index) => {
-                        return {
-                            id: index,
-                            status: "FT", // Fallback assumes Finished
-                            league: match.strLeague,
-                            dateEn: match.dateEvent,
-                            dateKm: match.dateEvent,
-                            stadium: match.strVenue,
-                            t1: { nameEn: match.strHomeTeam, nameKm: match.strHomeTeam, color: "#38bdf8", score: match.intHomeScore, badge: `https://ui-avatars.com/api/?name=${match.strHomeTeam.replace(/ /g,'+')}&background=38bdf8&color=fff&size=128` },
-                            t2: { nameEn: match.strAwayTeam, nameKm: match.strAwayTeam, color: "#f43f5e", score: match.intAwayScore, badge: `https://ui-avatars.com/api/?name=${match.strAwayTeam.replace(/ /g,'+')}&background=f43f5e&color=fff&size=128` },
-                            prob: { t1: 45, draw: 25, t2: 30 },
-                            tactics: {
-                                t1StyleEn: "Fallback API Active", t1StyleKm: "ប្រើប្រាស់ API បម្រុង",
-                                t1ListEn: ["Data from TheSportsDB"], t1ListKm: ["ទិន្នន័យពី TheSportsDB"],
-                                t2StyleEn: "Safe UI Rendering", t2StyleKm: "បង្ហាញ UI សុវត្ថិភាព",
-                                t2ListEn: ["CORS protection handled"], t2ListKm: ["ដោះស្រាយបញ្ហា CORS រួចរាល់"],
-                                xgEn: "RapidAPI was blocked. Used public fallback API.", xgKm: "RapidAPI ត្រូវរារាំង។ ប្រើប្រាស់ API បម្រុងដោយជោគជ័យ។"
+                    // CRITICAL FIX: TheSportsDB uses fallbackData.events for this endpoint, NOT fallbackData.results
+                    if (fallbackData && fallbackData.events && fallbackData.events.length > 0) {
+                        matchesData = fallbackData.events.slice(0, 5).map((match, index) => {
+                            return {
+                                id: index,
+                                status: "FT", // Assume finished for past events
+                                league: match.strLeague || "Premier League",
+                                dateEn: match.dateEvent || "Recent",
+                                dateKm: match.dateEvent || "ថ្មីៗនេះ",
+                                stadium: match.strVenue || "Stadium TBD",
+                                t1: { 
+                                    nameEn: match.strHomeTeam, 
+                                    nameKm: match.strHomeTeam, 
+                                    color: "#38bdf8", 
+                                    score: match.intHomeScore || 0, 
+                                    badge: match.strHomeTeamBadge || `https://ui-avatars.com/api/?name=${(match.strHomeTeam||'Home').replace(/ /g,'+')}&background=38bdf8&color=fff&size=128` 
+                                },
+                                t2: { 
+                                    nameEn: match.strAwayTeam, 
+                                    nameKm: match.strAwayTeam, 
+                                    color: "#f43f5e", 
+                                    score: match.intAwayScore || 0, 
+                                    badge: match.strAwayTeamBadge || `https://ui-avatars.com/api/?name=${(match.strAwayTeam||'Away').replace(/ /g,'+')}&background=f43f5e&color=fff&size=128` 
+                                },
+                                prob: { t1: 45, draw: 25, t2: 30 },
+                                tactics: {
+                                    t1StyleEn: "Fallback API Active", t1StyleKm: "ប្រើប្រាស់ API បម្រុង",
+                                    t1ListEn: ["Data from TheSportsDB"], t1ListKm: ["ទិន្នន័យពី TheSportsDB"],
+                                    t2StyleEn: "Safe UI Rendering", t2StyleKm: "បង្ហាញ UI សុវត្ថិភាព",
+                                    t2ListEn: ["CORS protection handled"], t2ListKm: ["ដោះស្រាយបញ្ហា CORS រួចរាល់"],
+                                    xgEn: "RapidAPI was blocked. Used public fallback API.", xgKm: "RapidAPI ត្រូវរារាំង។ ប្រើប្រាស់ API បម្រុងដោយជោគជ័យ។"
+                                }
                             }
-                        }
-                    });
-
-                    renderAfterFetch();
+                        });
+                        
+                        renderAfterFetch();
+                        
+                    } else {
+                        throw new Error("Invalid data structure from TheSportsDB (no events found).");
+                    }
 
                 } catch (fallbackError) {
                     console.error("Both APIs failed.", fallbackError);
                     document.getElementById('app-content').innerHTML = `
                         <div class="loader-container">
                             <h3 style="color: var(--accent);">API Request Failed entirely. Please try again later.</h3>
+                            <p style="color: var(--text-muted); font-size: 14px;">Error: ${fallbackError.message}</p>
                         </div>
                     `;
                 }
